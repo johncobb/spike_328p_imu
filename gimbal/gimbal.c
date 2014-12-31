@@ -26,6 +26,7 @@ volatile int8_t gimbal_state = GIM_IDLE;
 
 void gimbal_accel_angle();
 void gimbal_complementary_angle();
+void gimbal_complementary_angle2();
 void log_application_data();
 
 enum gimbal_task {
@@ -50,6 +51,8 @@ static void enter_state(int8_t state);
 static volatile clock_time_t future = 0;
 static bool timeout();
 static void set_timer(clock_time_t timeout);
+
+clock_time_t _last_time_read = 0;
 
 static void enter_task(int8_t index)
 {
@@ -89,6 +92,8 @@ void gimbal_init()
 	LOG("enter_state: GIM_IDLE\r\n");
 	enter_task(READACC);
 	enter_state(GIM_IDLE);
+	_last_time_read = clock_time();
+
 }
 
 void gimbal_tick()
@@ -138,9 +143,9 @@ void gimbal_accel_angle()
 
 
 	// low pass filter
-	fXg = fXg * alpha + (fXg * (1.0 - alpha));
-	fYg = fYg * alpha + (fYg * (1.0 - alpha));
-	fZg = fZg * alpha + (fZg * (1.0 - alpha));
+	fXg = fXg * alpha + (fXg * (1.0f - alpha));
+	fYg = fYg * alpha + (fYg * (1.0f - alpha));
+	fZg = fZg * alpha + (fZg * (1.0f - alpha));
 
 	// calc roll and pitch
 	roll = (atan2(fYg, fZg)*180.0)/PI;
@@ -173,7 +178,8 @@ float deltat = 0.0;
 float g_sensitivity = 131.0f; // for 250 deg/s, check datasheet
 
 
-void read_sensor_data();
+//void read_sensor_data();
+void read_sensor_data(int16_t aX, int16_t aY, int16_t aZ, int16_t gX, int16_t gY, int16_t gZ, int16_t mX, int16_t mY, int16_t mZ);
 
 float accelX=0.0f, accelY=0.0f, accelZ=0.0f;
 float gyroX=0.0f, gyroY=0.0f, gyroZ=0.0f;
@@ -184,39 +190,109 @@ float roll=0.0f, pitch=0.0f, yaw=0.0f;
 
 
 
-void read_sensor_data()
+//void read_sensor_data()
+//{
+//
+//	// *** ACCEL ***
+//	int16_t aX=0, aY=0, aZ=0;
+//
+//	imu_get_acceleration(&aX, &aY, &aZ);
+//
+//	// apply calibration offsets
+//	aX -= config.acc_offset_x;
+//	aY -= config.acc_offset_y;
+//	aZ -= config.acc_offset_z;
+//
+//	// store scaled value into floats accelX,Y,Z
+//
+//
+//	accelX = aX*2.0f/32768.0f; // 2 g full range for accelerometer (16384.0f or 32768.0f)
+//	accelY = aY*2.0f/32768.0f; // 2 g full range for accelerometer (16384.0f or 32768.0f)
+//	accelZ = aZ*2.0f/32768.0f; // 2 g full range for accelerometer (16384.0f or 32768.0f)
+//	// *** END ACCEL ***
+//
+//	// *** GYRO ***
+//	int16_t gX=0, gY=0, gZ=0;
+//
+//	imu_get_rotation(&gX, &gY, &gZ);
+//
+//	//LOG("gyro-raw x,y,z: %d %d %d\r\n", gX, gY, gZ);
+//	//LOG("gyro-less-offset x,y,z: %d %d %d\r\n", gX-config.gyro_offset_x, gY-config.gyro_offset_y, gZ-config.gyro_offset_z);
+//
+//	// TODO: REVIEW
+//	gyroX = (gX - config.gyro_offset_x) / g_sensitivity;
+//	gyroY = (gY - config.gyro_offset_y) / g_sensitivity;
+//	gyroZ = (gZ - config.gyro_offset_z) / g_sensitivity;
+//
+//	//LOG("gyro/g_sens x,y,z: %f %f %f\r\n", gyroX, gyroY, gyroZ);
+//
+//
+////	gyroX = gyroX*250.0f/32768.0f; // 250 deg/s full range for gyroscope
+////	gyroY = gyroY*250.0f/32768.0f; // 250 deg/s full range for gyroscope
+////	gyroZ = gyroZ*250.0f/32768.0f; // 250 deg/s full range for gyroscope
+//
+//
+//	//LOG("gyro 250 deg/s x,y,z: %f %f %f\r\n", gyroX, gyroY, gyroZ);
+//	// *** END GYRO ***
+//
+//	// *** MAG ***
+//	int16_t mX=0, mY=0, mZ=0;
+//
+//	if (mcount > 1000/MagRate) {
+//		imu_get_mag(&mX, &mY, &mZ);
+//		magX = mX*10.0f*1229.0f/4096.0f + 18.0f; // milliGauss (1229 microTesla per 2^12 bits, 10 mG per microTesla)
+//		magY = mY*10.0f*1229.0f/4096.0f + 70.0f; // apply calibration offsets in mG that correspond to your environment and magnetometer
+//		magZ = mZ*10.0f*1229.0f/4096.0f + 270.0f;
+//		mcount = 0;
+//	}
+//	// *** END MAG ***
+//}
+
+void read_sensor_data(int16_t aX, int16_t aY, int16_t aZ, int16_t gX, int16_t gY, int16_t gZ, int16_t mX, int16_t mY, int16_t mZ)
 {
 
 	// *** ACCEL ***
-	int16_t aX=0, aY=0, aZ=0;
 
-	imu_get_acceleration(&aX, &aY, &aZ);
+	imu_get_acceleration(aX, aY, aZ);
 
 	// apply calibration offsets
 	aX -= config.acc_offset_x;
 	aY -= config.acc_offset_y;
 	aZ -= config.acc_offset_z;
 
+	aX = aX*2/32768;
+	aY = aY*2/32768;
+	aZ = aZ*2/32768;
+
+
+	imu_get_rotation(gX, gY, gZ);
+
+	gX = (gX - config.gyro_offset_x) / g_sensitivity;
+	gY = (gY - config.gyro_offset_y) / g_sensitivity;
+	gZ = (gZ - config.gyro_offset_z) / g_sensitivity;
+
+
+	return;
+
 	// store scaled value into floats accelX,Y,Z
 
 
-	accelX = aX*2.0f/32768.0f; // 2 g full range for accelerometer (16384.0f or 32768.0f)
-	accelY = aY*2.0f/32768.0f; // 2 g full range for accelerometer (16384.0f or 32768.0f)
-	accelZ = aZ*2.0f/32768.0f; // 2 g full range for accelerometer (16384.0f or 32768.0f)
+//	accelX = aX*2.0f/32768.0f; // 2 g full range for accelerometer (16384.0f or 32768.0f)
+//	accelY = aY*2.0f/32768.0f; // 2 g full range for accelerometer (16384.0f or 32768.0f)
+//	accelZ = aZ*2.0f/32768.0f; // 2 g full range for accelerometer (16384.0f or 32768.0f)
 	// *** END ACCEL ***
 
 	// *** GYRO ***
-	int16_t gX=0, gY=0, gZ=0;
 
-	imu_get_rotation(&gX, &gY, &gZ);
+	imu_get_rotation(gX, gY, gZ);
 
 	//LOG("gyro-raw x,y,z: %d %d %d\r\n", gX, gY, gZ);
 	//LOG("gyro-less-offset x,y,z: %d %d %d\r\n", gX-config.gyro_offset_x, gY-config.gyro_offset_y, gZ-config.gyro_offset_z);
 
 	// TODO: REVIEW
-	gyroX = (gX - config.gyro_offset_x) / g_sensitivity;
-	gyroY = (gY - config.gyro_offset_y) / g_sensitivity;
-	gyroZ = (gZ - config.gyro_offset_z) / g_sensitivity;
+//	gyroX = (gX - config.gyro_offset_x) / g_sensitivity;
+//	gyroY = (gY - config.gyro_offset_y) / g_sensitivity;
+//	gyroZ = (gZ - config.gyro_offset_z) / g_sensitivity;
 
 	//LOG("gyro/g_sens x,y,z: %f %f %f\r\n", gyroX, gyroY, gyroZ);
 
@@ -230,18 +306,17 @@ void read_sensor_data()
 	// *** END GYRO ***
 
 	// *** MAG ***
-	int16_t mX=0, mY=0, mZ=0;
+
 
 	if (mcount > 1000/MagRate) {
-		imu_get_mag(&mX, &mY, &mZ);
-		magX = mX*10.0f*1229.0f/4096.0f + 18.0f; // milliGauss (1229 microTesla per 2^12 bits, 10 mG per microTesla)
-		magY = mY*10.0f*1229.0f/4096.0f + 70.0f; // apply calibration offsets in mG that correspond to your environment and magnetometer
-		magZ = mZ*10.0f*1229.0f/4096.0f + 270.0f;
-		mcount = 0;
+		imu_get_mag(mX, mY, mZ);
+//		magX = mX*10.0f*1229.0f/4096.0f + 18.0f; // milliGauss (1229 microTesla per 2^12 bits, 10 mG per microTesla)
+//		magY = mY*10.0f*1229.0f/4096.0f + 70.0f; // apply calibration offsets in mG that correspond to your environment and magnetometer
+//		magZ = mZ*10.0f*1229.0f/4096.0f + 270.0f;
+//		mcount = 0;
 	}
 	// *** END MAG ***
 }
-
 
 
 
@@ -252,33 +327,117 @@ clock_time_t start_time;
 clock_time_t end_time;
 int delay;
 
+float _last_angle_x = 0.0f;
+float _last_angle_y = 0.0f;
+float _last_angle_z = 0.0f;
+float _last_gyro_angle_x = 0.0f;
+float _last_gyro_angle_y = 0.0f;
+float _last_gyro_angle_z = 0.0f;
+
+
+
 void gimbal_complementary_angle()
 {
-	if(clock_time() >= f_timeout) {
-		f_timeout = clock_time() + 33;
-	}
-	else {
-		return;
-	}
 
 
-	start_time = clock_time();
+	int16_t aX=0, aY=0, aZ=0, gX=0, gY=0, gZ=0, mX=0, mY=0, mZ=0;
+
+//	if(clock_time() >= f_timeout) {
+//		f_timeout = clock_time() + 10;
+//	}
+//	else {
+//		return;
+//	}
 
 	mcount++;
 
-	read_sensor_data();
+	//read_sensor_data();
+	read_sensor_data(&aX, &aY, &aZ, &gX, &gY, &gZ, &mX, &mY, &mZ);
+	//LOG("\r\n\r\nstart\r\n");
+	//LOG("ax, ay, az, gx, gy, gz: %d %d %d %d %d %d\r\n", aX, aY, aZ, gX, gY, gZ);
+	clock_time_t t_now = clock_time();
+
+
+
+	float gyro_x = (float)gX;
+	float gyro_y = (float)gY;
+	float gyro_z = (float)gZ;
+	float accel_x = (float)aX;
+	float accel_y = (float)aY;
+	float accel_z = (float)aZ;
+
+
+	//LOG("accel x,y,z gyro x,y,z: %f %f %f %f %f %f\r\n", accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z)
+
+
+	float accel_angle_y = atan2(accel_x, sqrt( pow(accel_y, 2) + pow(accel_z, 2))) * 180.0f / M_PI;
+	float accel_angle_x = atan2(accel_y, sqrt( pow(accel_x, 2) + pow(accel_z, 2))) * 180.0f / M_PI;
+	float accel_angle_z = 0;
+
+	//LOG("accel angle x,y,z: %f %f %f\r\n", accel_angle_x, accel_angle_y, accel_angle_z);
+
+	// Compute filtered angles
+	clock_time_t delta_t = (t_now-_last_time_read);
+
+	float dt = ((float)delta_t)/1000.0f;
+	//LOG("t_now %lu, t_last %lu t_delta %lu dt %f\r\n", t_now, _last_time_read, delta_t, dt);
+
+	float gyro_angle_x = gyro_x * dt + _last_angle_x;
+	float gyro_angle_y = gyro_y * dt + _last_angle_y;
+	float gyro_angle_z = gyro_z * dt + _last_angle_z;
+
+	//LOG("gyro_angle_x,y,z: %f %f %f\r\n", gyro_angle_x, gyro_angle_y, gyro_angle_z);
+
+	// Compute the drifting gyro angles
+	float unfiltered_gyro_angle_x = gyro_x*dt + _last_gyro_angle_x;
+	float unfiltered_gyro_angle_y = gyro_y*dt + _last_gyro_angle_y;
+	float unfiltered_gyro_angle_z = gyro_z*dt + _last_gyro_angle_z;
+
+	//LOG("unflt angles x, y, z: %f %f %f\r\n", unfiltered_gyro_angle_x, unfiltered_gyro_angle_y, unfiltered_gyro_angle_z);
+
+	// Apply complementry filter
+	const float alpha = 0.96;
+	float angle_x = alpha*gyro_angle_x + (1.0f-alpha)*accel_angle_x;
+	float angle_y = alpha*gyro_angle_y + (1.0f-alpha)*accel_angle_y;
+	float angle_z = alpha*gyro_angle_z + (1.0f-alpha)*accel_angle_z;
+
+	//LOG("cmpflt angles x, y, z: %f %f %f\r\n", angle_x, angle_y, angle_z);
+
+
+
+	//LOG("end\r\n");
+
+	_last_time_read = t_now;
+	_last_angle_x = angle_x;
+	_last_angle_y = angle_y;
+	_last_angle_z = angle_z;
+	_last_gyro_angle_x = unfiltered_gyro_angle_x;
+	_last_gyro_angle_y = unfiltered_gyro_angle_y;
+	_last_gyro_angle_z = unfiltered_gyro_angle_z;
+
+
+	// Throttle output to .1x per second
+	if(clock_time() >= f_log_timeout) {
+		f_log_timeout = clock_time() + 100;
+		LOG("%f %f %f %f\r\n", angle_x, angle_y, angle_z, dt);
+	}
+
+	return;
+
+
+
 
 
 	// angles based on accelerometer
 	float accelRoll = atan2(accelX, sqrt( pow(accelY, 2) + pow(accelZ, 2))) * 180.0f / M_PI;
 	float accelPitch = atan2(accelY, sqrt( pow(accelX, 2) + pow(accelZ, 2))) * 180.0f / M_PI;
 
-	float frequency = (clock_time() - end_time);
+
 	// angles based on gyro (deg/s)
 
-	gyroRoll = gyroRoll + gyroX / frequency;
-	gyroPitch = gyroPitch - gyroY / frequency;
-	gyroYaw = gyroYaw + gyroZ / frequency;
+	gyroRoll = gyroRoll + gyroX;
+	gyroPitch = gyroPitch - gyroY;
+	gyroYaw = gyroYaw + gyroZ;
 
 	// complementary filter
 	  // tau = DT*(A)/(1-A)
@@ -287,8 +446,8 @@ void gimbal_complementary_angle()
 //	gyroPitch = gyroPitch * 0.96f + accelPitch * 0.04f;
 
 
-	gyroRoll = gyroRoll * 0.96f + accelRoll * 0.04f;
-	gyroPitch = gyroPitch * 0.96f + accelPitch * 0.04f;
+	gyroRoll = gyroRoll * 0.94f + accelRoll * 0.06f;
+	gyroPitch = gyroPitch * 0.94f + accelPitch * 0.06f;
 
 
 	roll = gyroRoll * 180.0f / M_PI;
@@ -306,6 +465,17 @@ void gimbal_complementary_angle()
 	}
 	end_time = clock_time();
 }
+
+
+//	if(force_magnitude > 8192 && force_magnitude < 32768) {
+//		// angles based on accelerometer
+//		float accelRoll = atan2(accelX, sqrt( pow(accelY, 2) + pow(accelZ, 2))) * 180.0f / M_PI;
+//		_roll = _roll * 0.98f + accelRoll * 0.02f;
+//
+//		float accelPitch = atan2(accelY, sqrt( pow(accelX, 2) + pow(accelZ, 2))) * 180.0f / M_PI;
+//		_pitch = _pitch * 0.98f + accelPitch * 0.02f;
+//
+//	}
 
 void log_application_data()
 {

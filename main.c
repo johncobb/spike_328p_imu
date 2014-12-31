@@ -54,7 +54,7 @@ void main()
 	clock_init();
 	sei();
 
-	LOG("\r\n\r\nspike_358p_imu starting...\r\n");
+	LOG("\r\n\r\nspike_328p_imu starting...\r\n");
 
 	/*
 	 * load configuration

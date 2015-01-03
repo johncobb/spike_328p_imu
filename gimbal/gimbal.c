@@ -319,10 +319,6 @@ void read_sensor_data(int16_t aX, int16_t aY, int16_t aZ, int16_t gX, int16_t gY
 }
 
 
-
-//#define FREQ	33.0 // sample freq in Hz
-#define	 FREQ .000264
-
 clock_time_t start_time;
 clock_time_t end_time;
 int delay;
@@ -354,7 +350,11 @@ void gimbal_complementary_angle()
 	//read_sensor_data();
 	read_sensor_data(&aX, &aY, &aZ, &gX, &gY, &gZ, &mX, &mY, &mZ);
 	//LOG("\r\n\r\nstart\r\n");
-	//LOG("ax, ay, az, gx, gy, gz: %d %d %d %d %d %d\r\n", aX, aY, aZ, gX, gY, gZ);
+
+	//LOG("ax, ay, az: %d %d %d\r\n", aX, aY, aZ); // accel only
+	//LOG("gx, gy, gz: %d %d %d\r\n", gX, gY, gZ); // gyro only
+	//LOG("ax, ay, az, gx, gy, gz: %d %d %d %d %d %d\r\n", aX, aY, aZ, gX, gY, gZ); // both
+
 	clock_time_t t_now = clock_time();
 
 
@@ -366,15 +366,29 @@ void gimbal_complementary_angle()
 	float accel_y = (float)aY;
 	float accel_z = (float)aZ;
 
+//gyro[0]=(double)p/131*PI/180-gyro_bias[0];
+
+	gyro_x = ((float) gX)/131*M_PI/180.0f;
+	gyro_y = ((float) gY)/131*M_PI/180.0f;
+	gyro_z = ((float) gZ)/131*M_PI/180.0f;
+
 
 	//LOG("accel x,y,z gyro x,y,z: %f %f %f %f %f %f\r\n", accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z)
-
+	//LOG("gyro x,y,z: %f %f %f\r\n", gyro_x, gyro_y, gyro_z)
+	//return;
 
 	float accel_angle_y = atan2(accel_x, sqrt( pow(accel_y, 2) + pow(accel_z, 2))) * 180.0f / M_PI;
 	float accel_angle_x = atan2(accel_y, sqrt( pow(accel_x, 2) + pow(accel_z, 2))) * 180.0f / M_PI;
 	float accel_angle_z = 0;
 
+	/*
+	LOG("roll/pitch/yaw %f:%f:%f\r\n", accel_angle_x, accel_angle_y, accel_angle_z);
+	return;
+	*/
+
 	//LOG("accel angle x,y,z: %f %f %f\r\n", accel_angle_x, accel_angle_y, accel_angle_z);
+
+
 
 	// Compute filtered angles
 	clock_time_t delta_t = (t_now-_last_time_read);
@@ -401,11 +415,6 @@ void gimbal_complementary_angle()
 	float angle_y = alpha*gyro_angle_y + (1.0f-alpha)*accel_angle_y;
 	float angle_z = alpha*gyro_angle_z + (1.0f-alpha)*accel_angle_z;
 
-	//LOG("cmpflt angles x, y, z: %f %f %f\r\n", angle_x, angle_y, angle_z);
-
-
-
-	//LOG("end\r\n");
 
 	_last_time_read = t_now;
 	_last_angle_x = angle_x;
@@ -419,51 +428,9 @@ void gimbal_complementary_angle()
 	// Throttle output to .1x per second
 	if(clock_time() >= f_log_timeout) {
 		f_log_timeout = clock_time() + 100;
-		LOG("%f %f %f %f\r\n", angle_x, angle_y, angle_z, dt);
+		//LOG("%f %f %f %f\r\n", angle_x, angle_y, angle_z, dt);
+		LOG("roll/pitch/yaw %f:%f:%f\r\n", angle_x, angle_y, angle_z);
 	}
-
-	return;
-
-
-
-
-
-	// angles based on accelerometer
-	float accelRoll = atan2(accelX, sqrt( pow(accelY, 2) + pow(accelZ, 2))) * 180.0f / M_PI;
-	float accelPitch = atan2(accelY, sqrt( pow(accelX, 2) + pow(accelZ, 2))) * 180.0f / M_PI;
-
-
-	// angles based on gyro (deg/s)
-
-	gyroRoll = gyroRoll + gyroX;
-	gyroPitch = gyroPitch - gyroY;
-	gyroYaw = gyroYaw + gyroZ;
-
-	// complementary filter
-	  // tau = DT*(A)/(1-A)
-	  // = 0.48sec
-//	gyroRoll = gyroRoll * 0.96f + accelRoll * 0.04f;
-//	gyroPitch = gyroPitch * 0.96f + accelPitch * 0.04f;
-
-
-	gyroRoll = gyroRoll * 0.94f + accelRoll * 0.06f;
-	gyroPitch = gyroPitch * 0.94f + accelPitch * 0.06f;
-
-
-	roll = gyroRoll * 180.0f / M_PI;
-	pitch = gyroPitch * 180.0f /M_PI;
-	yaw = gyroYaw * 180.0f / M_PI;
-
-
-
-	// Throttle output to .1x per second
-	if(clock_time() >= f_log_timeout) {
-		f_log_timeout = clock_time() + 100;
-		//LOG("roll/pitch/yaw %f:%f:%f\r\n", gyroY, gyroX, gyroZ);
-		LOG("roll/pitch/yaw %f:%f:%f\r\n", roll, pitch, yaw);
-		//LOG("freq: %f\r\n", frequency);
-	}
-	end_time = clock_time();
 }
 
 
